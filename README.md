@@ -1,6 +1,11 @@
 # opencode-goalkit
 
+[![npm version](https://img.shields.io/npm/v/opencode-goalkit.svg)](https://www.npmjs.com/package/opencode-goalkit)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-goalkit.svg)](https://www.npmjs.com/package/opencode-goalkit)
+
 OpenCode plugin that adds approval-gated goal execution tools plus `/goal` and `/grill` commands.
+
+Package: [opencode-goalkit on npm](https://www.npmjs.com/package/opencode-goalkit)
 
 ## What It Does
 
@@ -23,6 +28,8 @@ Install the slash commands globally:
 ```sh
 npx opencode-goalkit install --global
 ```
+
+You can also inspect the published package at [npmjs.com/package/opencode-goalkit](https://www.npmjs.com/package/opencode-goalkit).
 
 Restart OpenCode. Run one of these inside OpenCode:
 
