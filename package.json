@@ -1,6 +1,6 @@
 {
   "name": "opencode-goalkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenCode goal planning commands and helper plugin",
   "type": "module",
   "keywords": [
