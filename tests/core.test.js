@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   buildSkillMarkdown,
+  buildGoalState,
   createGoalId,
   createGoalSkill,
   formatLoopEligibilityMarkdown,
@@ -13,13 +14,17 @@ import {
   installIntoProject,
   installGlobalCommand,
   listGoalHandoffs,
+  listGoals,
   normalizeLoopEligibility,
+  parseHandoffMarkdown,
   readGoalHandoffs,
+  readGoalState,
   recordHandoff,
   resolveGlobalConfigDir,
   safeResolveInside,
   projectRootFromContext,
   slugify,
+  updateGoalStatus,
 } from "../src/core.js";
 
 const fixedDate = new Date("2026-06-25T08:30:15.000Z");
@@ -98,7 +103,7 @@ test("resolveGlobalConfigDir follows OpenCode env precedence", () => {
   assert.throws(() => resolveGlobalConfigDir({}, ""), /Cannot resolve global OpenCode config directory/);
 });
 
-test("handoff markdown preserves required headings and typo", () => {
+test("handoff markdown writes achieved heading and parser accepts legacy typo", () => {
   const markdown = formatHandoffMarkdown({
     goal: "Goal",
     description: "Do work",
@@ -108,7 +113,15 @@ test("handoff markdown preserves required headings and typo", () => {
     timestamp: "2026-06-25T08:30:15.000Z",
   });
 
-  assert.equal(markdown, `#goal\nGoal\n\n#description\nDo work\n\n#acheieved: yes\n\n#findings\nFound it\n\n#notes\nNo notes\n\n#timestamp\n2026-06-25T08:30:15.000Z\n`);
+  assert.equal(markdown, `#goal\nGoal\n\n#description\nDo work\n\n#achieved: yes\n\n#findings\nFound it\n\n#notes\nNo notes\n\n#timestamp\n2026-06-25T08:30:15.000Z\n`);
+  assert.deepEqual(parseHandoffMarkdown(markdown), {
+    achieved: true,
+    usesLegacyAchievedHeading: false,
+  });
+  assert.deepEqual(parseHandoffMarkdown("#acheieved: no\n"), {
+    achieved: false,
+    usesLegacyAchievedHeading: true,
+  });
 });
 
 test("formatLoopEligibilityMarkdown renders pass and fail evidence", () => {
@@ -177,7 +190,7 @@ test("buildSkillMarkdown includes execution workflow and handoff contract", () =
   });
 
   assert.match(markdown, /^---\nname: goal-20260625-083015-loop/m);
-  assert.match(markdown, /compatibility: Requires OpenCode goalkit plugin tools for handoff persistence\./);
+  assert.match(markdown, /compatibility: Requires OpenCode goalkit plugin tools for state and handoff persistence\./);
   assert.match(markdown, /# Four-Condition Loop Test/);
   assert.match(markdown, /## repeats: pass/);
   assert.match(markdown, /## automated_verification: pass/);
@@ -189,7 +202,28 @@ test("buildSkillMarkdown includes execution workflow and handoff contract", () =
   assert.match(markdown, /goal_list_handoffs/);
   assert.match(markdown, /agent: verification-agent/);
   assert.match(markdown, /Isolated verification pass 2/);
-  assert.match(markdown, /#acheieved: yes\/no/);
+  assert.match(markdown, /goal_update_status/);
+  assert.match(markdown, /#achieved: yes\/no/);
+});
+
+test("buildGoalState creates active structured runtime state", () => {
+  assert.deepEqual(buildGoalState({
+    goalId: "goal-20260625-083015-loop",
+    goal: "Loop engineering",
+    createdAt: "2026-06-25T08:30:15.000Z",
+    tokenBudget: "50000 tokens",
+  }), {
+    goalId: "goal-20260625-083015-loop",
+    objective: "Loop engineering",
+    status: "active",
+    createdAt: "2026-06-25T08:30:15.000Z",
+    updatedAt: "2026-06-25T08:30:15.000Z",
+    attempts: 0,
+    verificationPasses: 0,
+    skillPath: ".agents/skills/goal-20260625-083015-loop/SKILL.md",
+    handoffDir: ".opencode/goals/goal-20260625-083015-loop/handoffs",
+    tokenBudget: "50000 tokens",
+  });
 });
 
 test("createGoalSkill writes skill and goal files without overwriting", async () => {
@@ -206,6 +240,7 @@ test("createGoalSkill writes skill and goal files without overwriting", async ()
     assert.equal(result.goalId, "goal-20260625-083015-build-loop");
     assert.equal(result.skillPath, path.join(project, ".agents", "skills", "goal-20260625-083015-build-loop", "SKILL.md"));
     assert.equal(result.goalPath, path.join(project, ".opencode", "goals", "goal-20260625-083015-build-loop", "goal.md"));
+    assert.equal(result.statePath, path.join(project, ".opencode", "goals", "goal-20260625-083015-build-loop", "state.json"));
     assert.equal(result.handoffDir, path.join(project, ".opencode", "goals", "goal-20260625-083015-build-loop", "handoffs"));
     assert.match(await readFile(result.skillPath, "utf8"), /# Goal\nBuild loop/);
     assert.match(await readFile(result.skillPath, "utf8"), /# Four-Condition Loop Test/);
@@ -218,6 +253,16 @@ test("createGoalSkill writes skill and goal files without overwriting", async ()
     assert.match(goalRecord, /Follow the canonical Agent Skill/);
     assert.doesNotMatch(goalRecord, /# Plan\nApproved plan/);
     assert.doesNotMatch(goalRecord, /## senior_tools: pass/);
+
+    const state = JSON.parse(await readFile(result.statePath, "utf8"));
+    assert.equal(state.goalId, "goal-20260625-083015-build-loop");
+    assert.equal(state.objective, "Build loop");
+    assert.equal(state.status, "active");
+    assert.equal(state.createdAt, "2026-06-25T08:30:15.000Z");
+    assert.equal(state.attempts, 0);
+    assert.equal(state.verificationPasses, 0);
+    assert.equal(state.skillPath, ".agents/skills/goal-20260625-083015-build-loop/SKILL.md");
+    assert.equal(state.handoffDir, ".opencode/goals/goal-20260625-083015-build-loop/handoffs");
 
     await assert.rejects(
       () => readFile(path.join(project, ".opencode", "skills", "goal-20260625-083015-build-loop", "SKILL.md"), "utf8"),
@@ -299,8 +344,26 @@ test("recordHandoff writes normalized markdown under the goal handoff directory"
     });
 
     assert.match(result.handoffPath, /\.opencode\/goals\/goal-20260625-083015-build-loop\/handoffs\/20260625083100-explore-agent\.md$/);
-    assert.match(await readFile(result.handoffPath, "utf8"), /#acheieved: no/);
+    assert.match(await readFile(result.handoffPath, "utf8"), /#achieved: no/);
     assert.deepEqual(await listGoalHandoffs(project, "goal-20260625-083015-build-loop"), ["20260625083100-explore-agent.md"]);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test("recordHandoff refuses to write without an existing goal record", async () => {
+  const project = await tempProject();
+  try {
+    await assert.rejects(
+      () => recordHandoff(project, {
+        goalId: "goal-20260625-083015-missing",
+        agent: "Explore Agent",
+        goal: "Build loop",
+        description: "Inspect files",
+        achieved: false,
+      }),
+      /Goal record not found/,
+    );
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -353,6 +416,79 @@ test("readGoalHandoffs returns ordered paths and contents for verification", asy
   }
 });
 
+test("goal state can be listed, read, and updated to complete or blocked", async () => {
+  const project = await tempProject();
+  try {
+    await createGoalSkill(project, {
+      goal: "Build loop",
+      plan: "Approved plan",
+      loopEligibility: passingLoopEligibility(),
+    }, { now: fixedDate });
+
+    await recordHandoff(project, {
+      goalId: "goal-20260625-083015-build-loop",
+      agent: "Execution Agent",
+      goal: "Build loop",
+      description: "Implement task",
+      achieved: true,
+      findings: "Implemented",
+      notes: "None",
+      timestamp: "2026-06-25T08:32:00.000Z",
+    });
+    await recordHandoff(project, {
+      goalId: "goal-20260625-083015-build-loop",
+      agent: "verification-agent",
+      goal: "Build loop",
+      description: "Isolated verification pass 1",
+      achieved: true,
+      findings: "All execution handoffs prove completion",
+      notes: "None",
+      timestamp: "2026-06-25T08:33:00.000Z",
+    });
+
+    assert.deepEqual((await listGoals(project)).map((goal) => goal.goalId), ["goal-20260625-083015-build-loop"]);
+    assert.equal((await readGoalState(project, "goal-20260625-083015-build-loop")).status, "active");
+
+    const completed = await updateGoalStatus(project, {
+      goalId: "goal-20260625-083015-build-loop",
+      status: "complete",
+      summary: "Build loop completed.",
+      evidence: "Verification pass 1 proved completion.",
+    }, { now: new Date("2026-06-25T08:34:00.000Z") });
+
+    assert.equal(completed.status, "complete");
+    assert.equal(completed.completedAt, "2026-06-25T08:34:00.000Z");
+    assert.equal(completed.attempts, 1);
+    assert.equal(completed.verificationPasses, 1);
+    assert.equal(completed.summary, "Build loop completed.");
+    assert.equal((await readGoalState(project, "goal-20260625-083015-build-loop")).status, "complete");
+
+    const blocked = await updateGoalStatus(project, {
+      goalId: "goal-20260625-083015-build-loop",
+      status: "blocked",
+      summary: "Blocked on missing fixture.",
+      evidence: "Verification pass 2 documents the same blocker.",
+    }, { now: new Date("2026-06-25T08:35:00.000Z") });
+
+    assert.equal(blocked.status, "blocked");
+    assert.equal(blocked.blockedAt, "2026-06-25T08:35:00.000Z");
+    assert.equal(blocked.completedAt, undefined);
+    assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "goals", "goal-20260625-083015-build-loop", "state.json"), "utf8")).statePath, undefined);
+
+    await assert.rejects(
+      () => updateGoalStatus(project, {
+        goalId: "goal-20260625-083015-build-loop",
+        status: "active",
+        summary: "Nope",
+        evidence: "Nope",
+      }),
+      /Invalid goal status/,
+    );
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test("installIntoProject installs command, plugin wrapper, runtime, and merges package json", async () => {
   const project = await tempProject();
   try {
@@ -372,6 +508,10 @@ test("installIntoProject installs command, plugin wrapper, runtime, and merges p
     assert.ok(commandTemplate.indexOf("Loop not justified") < commandTemplate.indexOf("After explicit approval, call `goal_create_skill`"));
     assert.match(commandTemplate, /do not call `goal_create_skill`/);
     assert.match(commandTemplate, /`loopEligibility`/);
+    assert.match(commandTemplate, /`bounded_execution`/);
+    assert.match(commandTemplate, /state_path/);
+    assert.match(commandTemplate, /goal_get_status/);
+    assert.match(commandTemplate, /goal_update_status/);
     assert.match(commandTemplate, /Maximum execution time:/);
     assert.match(commandTemplate, /Verification checks:/);
     assert.match(commandTemplate, /Whether this workflow will be reused:/);
@@ -380,6 +520,8 @@ test("installIntoProject installs command, plugin wrapper, runtime, and merges p
     assert.match(commandTemplate, /current project `.opencode\/goals` directory/);
     assert.match(commandTemplate, /Restart OpenCode from the target project directory/);
     assert.match(commandTemplate, /Do not launch subagents and do not continue execution/);
+    assert.match(commandTemplate, /#achieved: yes\/no/);
+    assert.match(commandTemplate, /Legacy handoffs may contain `#acheieved`/);
     assert.doesNotMatch(commandTemplate, /recurs weekly/);
     assert.doesNotMatch(commandTemplate, /weekly automation/);
 
@@ -417,6 +559,7 @@ test("installGlobalCommand writes only global command file", async () => {
     assert.equal(result.commandPath, path.join(configDir, "commands", "goal.md"));
     assert.equal(result.grillCommandPath, path.join(configDir, "commands", "grill.md"));
     assert.match(await readFile(result.commandPath, "utf8"), /Run the 4-condition loop test/);
+    assert.match(await readFile(result.commandPath, "utf8"), /goal_update_status/);
     assert.match(await readFile(result.commandPath, "utf8"), /Maximum execution time:/);
     assert.match(await readFile(result.grillCommandPath, "utf8"), /Ask exactly one question at a time/);
     assert.match(await readFile(result.grillCommandPath, "utf8"), /ask no more than 7 questions total/);

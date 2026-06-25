@@ -75,9 +75,19 @@ test("plugin tools create skills and handoffs with a mocked OpenCode context", a
 
     assert.match(skillResult.output, /goal_id: goal-/);
     assert.match(skillResult.output, /\.agents\/skills\/goal-/);
+    assert.match(skillResult.output, /state_path:/);
     assert.match(skillResult.metadata.skillPath, /\.agents\/skills\/goal-/);
+    assert.match(skillResult.metadata.statePath, /\.opencode\/goals\/goal-/);
     assert.equal(context.metadataCalls[0].title, "Goal skill created");
     assert.match(context.metadataCalls[0].metadata.skillPath, /\.agents\/skills\/goal-/);
+
+    const statusResult = await tools.goal_get_status.execute({
+      goalId: skillResult.metadata.goalId,
+    }, context);
+
+    assert.match(statusResult.output, /status: active/);
+    assert.equal(statusResult.metadata.status, "active");
+    assert.equal(context.metadataCalls[1].title, "Goal status read");
 
     const handoffResult = await tools.goal_record_handoff.execute({
       goalId: skillResult.metadata.goalId,
@@ -90,7 +100,7 @@ test("plugin tools create skills and handoffs with a mocked OpenCode context", a
     }, context);
 
     assert.match(handoffResult.output, /handoff_path:/);
-    assert.equal(context.metadataCalls[1].title, "Goal handoff recorded");
+    assert.equal(context.metadataCalls[2].title, "Goal handoff recorded");
 
     const verificationResult = await tools.goal_record_handoff.execute({
       goalId: skillResult.metadata.goalId,
@@ -103,7 +113,7 @@ test("plugin tools create skills and handoffs with a mocked OpenCode context", a
     }, context);
 
     assert.match(verificationResult.output, /handoff_path:/);
-    assert.equal(context.metadataCalls[2].title, "Goal handoff recorded");
+    assert.equal(context.metadataCalls[3].title, "Goal handoff recorded");
 
     const listResult = await tools.goal_list_handoffs.execute({
       goalId: skillResult.metadata.goalId,
@@ -113,7 +123,36 @@ test("plugin tools create skills and handoffs with a mocked OpenCode context", a
     assert.match(listResult.output, /--- handoff: .*general\.md/);
     assert.match(listResult.output, /--- handoff: .*verification-agent\.md/);
     assert.equal(listResult.metadata.handoffs.length, 2);
-    assert.equal(context.metadataCalls[3].title, "Goal handoffs listed");
+    assert.equal(context.metadataCalls[4].title, "Goal handoffs listed");
+
+    const updateResult = await tools.goal_update_status.execute({
+      goalId: skillResult.metadata.goalId,
+      status: "complete",
+      summary: "Build loop completed.",
+      evidence: "Verification handoff proves completion.",
+    }, context);
+
+    assert.match(updateResult.output, /status: complete/);
+    assert.match(updateResult.output, /verification_passes: 1/);
+    assert.equal(updateResult.metadata.status, "complete");
+    assert.equal(context.metadataCalls[5].title, "Goal status updated");
+
+    const listGoalsResult = await tools.goal_list_goals.execute({}, context);
+    assert.match(listGoalsResult.output, /goal_count: 1/);
+    assert.match(listGoalsResult.output, /status: complete/);
+    assert.equal(listGoalsResult.metadata.goals.length, 1);
+    assert.equal(context.metadataCalls[6].title, "Goals listed");
+
+    const blockedResult = await tools.goal_update_status.execute({
+      goalId: skillResult.metadata.goalId,
+      status: "blocked",
+      summary: "Blocked on missing fixture.",
+      evidence: "Verification pass 2 documents the same blocker.",
+    }, context);
+
+    assert.match(blockedResult.output, /status: blocked/);
+    assert.equal(blockedResult.metadata.status, "blocked");
+    assert.equal(context.metadataCalls[7].title, "Goal status updated");
   } finally {
     await rm(project, { recursive: true, force: true });
   }

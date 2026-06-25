@@ -120,8 +120,8 @@ export const LOOP_ELIGIBILITY_CONDITIONS = [
   },
   {
     key: "tokenBudget",
-    label: "token_budget",
-    description: "The loop has a stated maximum execution time or bounded retry/context policy.",
+    label: "bounded_execution",
+    description: "The loop has a token budget when provided, otherwise a stated max pass, time, or retry policy.",
   },
   {
     key: "seniorTools",
@@ -237,7 +237,7 @@ export function buildSkillMarkdown(input) {
   const constraints = Array.isArray(input.constraints) ? input.constraints : [];
   const description = truncateLine(goal, 220) || "Execute approved goal workflow";
 
-  return `---\nname: ${goalId}\ndescription: Execute approved goal workflow for: ${description}\ncompatibility: Requires OpenCode goalkit plugin tools for handoff persistence.\nmetadata:\n  generated-by: opencode-goalkit\n  goal-id: ${goalId}\n  created-at: ${createdAt}\n---\n\n# Goal\n${goal}\n\n# Four-Condition Loop Test\n${formatLoopEligibilityMarkdown(loopEligibility)}\n\n# Plan\n${plan}\n\n# Execution Workflow\n- Execute only the approved plan captured in this skill.\n- Keep orchestration concise; delegate focused work to existing subagents when useful.\n- Run independent subagent tasks in parallel when the plan says they do not depend on each other.\n- Ask the user before expanding scope, changing acceptance criteria, or taking destructive actions.\n- After every execution subagent result, call \`goal_record_handoff\` with the required handoff fields.\n- Always finish execution with the isolated verification loop below.\n\n# Ordered Phases\n${phases.length > 0 ? phases.map(renderPhase).join("\n\n") : "1. Execute the approved plan in the smallest safe sequence."}\n\n# Subagent Tasks\n${subagentTasks.length > 0 ? subagentTasks.map(renderSubagentTask).join("\n\n") : "Use subagents only when they reduce context or enable safe parallel work. Give each subagent one focused task."}\n\n# Acceptance Criteria\n${listBlock(acceptanceCriteria)}\n\n# Constraints\n${listBlock(constraints)}\n\n# Isolated Verification Loop\n- After execution handoffs are recorded, call \`goal_list_handoffs\` for this goal id.\n- Start a verification subagent that was not used for execution.\n- Give the verifier only the goal, approved plan, acceptance criteria, subagent task list, and \`goal_list_handoffs\` output.\n- The verifier must not rely on execution conversation context or claims outside the handoff files.\n- Record verifier output with \`goal_record_handoff\` using \`agent: verification-agent\` and \`description: Isolated verification pass 1\`.\n- The verifier sets \`achieved: true\` only when handoff evidence proves the goal and every acceptance criterion is complete, with no relevant \`#acheieved: no\` handoff left unresolved.\n- If pass 1 fails, create one correction execution pass from the verifier handoff \`#notes\`, record new execution handoffs, then run one more isolated verification pass with \`description: Isolated verification pass 2\`.\n- If pass 2 fails, stop and ask the user how to proceed.\n\n# Handoff Contract\nEvery execution and verification subagent response must contain these fields and nothing verbose unless needed:\n\n\`\`\`md\n#goal\n#description\n#acheieved: yes/no\n#findings\n#notes\n#timestamp\n\`\`\`\n\nThe orchestrator must persist each handoff with \`goal_record_handoff\` before continuing.\n`;
+  return `---\nname: ${goalId}\ndescription: Execute approved goal workflow for: ${description}\ncompatibility: Requires OpenCode goalkit plugin tools for state and handoff persistence.\nmetadata:\n  generated-by: opencode-goalkit\n  goal-id: ${goalId}\n  created-at: ${createdAt}\n---\n\n# Goal\n${goal}\n\n# Four-Condition Loop Test\n${formatLoopEligibilityMarkdown(loopEligibility)}\n\n# Plan\n${plan}\n\n# Execution Workflow\n- Execute only the approved plan captured in this skill.\n- Keep orchestration concise; delegate focused work to existing subagents when useful.\n- Run independent subagent tasks in parallel when the plan says they do not depend on each other.\n- Ask the user before expanding scope, changing acceptance criteria, or taking destructive actions.\n- After every execution subagent result, call \`goal_record_handoff\` with the required handoff fields.\n- Always finish execution with the isolated verification loop below.\n- Finish by calling \`goal_update_status\` with \`status: complete\` or \`status: blocked\` based on verifier evidence.\n\n# Ordered Phases\n${phases.length > 0 ? phases.map(renderPhase).join("\n\n") : "1. Execute the approved plan in the smallest safe sequence."}\n\n# Subagent Tasks\n${subagentTasks.length > 0 ? subagentTasks.map(renderSubagentTask).join("\n\n") : "Use subagents only when they reduce context or enable safe parallel work. Give each subagent one focused task."}\n\n# Acceptance Criteria\n${listBlock(acceptanceCriteria)}\n\n# Constraints\n${listBlock(constraints)}\n\n# Isolated Verification Loop\n- After execution handoffs are recorded, call \`goal_list_handoffs\` for this goal id.\n- Start a verification subagent that was not used for execution.\n- Give the verifier only the goal, approved plan, acceptance criteria, subagent task list, and \`goal_list_handoffs\` output.\n- The verifier must not rely on execution conversation context or claims outside the handoff files.\n- Record verifier output with \`goal_record_handoff\` using \`agent: verification-agent\` and \`description: Isolated verification pass 1\`.\n- The verifier sets \`achieved: true\` only when handoff evidence proves the goal and every acceptance criterion is complete, with no relevant \`#achieved: no\` or legacy \`#acheieved: no\` handoff left unresolved.\n- If pass 1 fails, create one correction execution pass from the verifier handoff \`#notes\`, record new execution handoffs, then run one more isolated verification pass with \`description: Isolated verification pass 2\`.\n- If pass 2 fails, mark the goal \`blocked\` with \`goal_update_status\` only when the same blocker is documented in the handoffs, then ask the user how to proceed.\n\n# Handoff Contract\nEvery execution and verification subagent response must contain these fields and nothing verbose unless needed:\n\n\`\`\`md\n#goal\n#description\n#achieved: yes/no\n#findings\n#notes\n#timestamp\n\`\`\`\n\nThe orchestrator must persist each handoff with \`goal_record_handoff\` before continuing.\n`;
 }
 
 export function buildGoalRecordMarkdown(input) {
@@ -251,6 +251,64 @@ export function buildGoalRecordMarkdown(input) {
   return `# Goal\n${goal}\n\n# Goal ID\n${goalId}\n\n# Status\napproved\n\n# Skill\n${skillName}\n\n# Canonical Skill Path\n${skillPath}\n\n# Handoff Directory\n${handoffDir}\n\n# Created\n${createdAt}\n\n# Instructions\nFollow the canonical Agent Skill at \`${skillPath}\`. This OpenCode goal record exists only to track goal state and handoff storage for the goalkit plugin.\n`;
 }
 
+export function buildGoalState(input) {
+  const goalId = normalizeGoalId(input.goalId);
+  const createdAt = input.createdAt || timestampParts().iso;
+  const objective = String(input.goal ?? input.objective ?? "").trim();
+  const state = {
+    goalId,
+    objective,
+    status: input.status || "active",
+    createdAt,
+    updatedAt: input.updatedAt || createdAt,
+    attempts: Number.isInteger(input.attempts) ? input.attempts : 0,
+    verificationPasses: Number.isInteger(input.verificationPasses) ? input.verificationPasses : 0,
+    skillPath: input.skillPath || `.agents/skills/${goalId}/SKILL.md`,
+    handoffDir: input.handoffDir || `.opencode/goals/${goalId}/handoffs`,
+  };
+
+  if (input.tokenBudget) state.tokenBudget = String(input.tokenBudget).trim();
+  if (input.summary) state.summary = String(input.summary).trim();
+  if (input.evidence) state.evidence = String(input.evidence).trim();
+  if (input.completedAt) state.completedAt = input.completedAt;
+  if (input.blockedAt) state.blockedAt = input.blockedAt;
+
+  return state;
+}
+
+function goalDirForProject(projectRoot, goalId) {
+  return safeResolveInside(opencodeDirForProject(projectRoot), "goals", normalizeGoalId(goalId));
+}
+
+function goalStatePath(projectRoot, goalId) {
+  return safeResolveInside(goalDirForProject(projectRoot, goalId), "state.json");
+}
+
+function goalRecordPath(projectRoot, goalId) {
+  return safeResolveInside(goalDirForProject(projectRoot, goalId), "goal.md");
+}
+
+async function assertGoalRecordExists(projectRoot, goalId) {
+  const recordPath = goalRecordPath(projectRoot, goalId);
+  try {
+    await access(recordPath);
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      throw new Error(`Goal record not found for ${normalizeGoalId(goalId)}. Create the goal with goal_create_skill before recording handoffs or updating status.`);
+    }
+    throw error;
+  }
+  return recordPath;
+}
+
+async function readJsonFile(filePath) {
+  return JSON.parse(await readFile(filePath, "utf8"));
+}
+
+async function writeJsonFile(filePath, value, options = {}) {
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, options);
+}
+
 export function formatHandoffMarkdown(input) {
   const goal = String(input.goal ?? "").trim() || "None";
   const description = String(input.description ?? "").trim() || "None";
@@ -259,7 +317,19 @@ export function formatHandoffMarkdown(input) {
   const notes = String(input.notes ?? "").trim() || "None";
   const timestamp = input.timestamp || timestampParts().iso;
 
-  return `#goal\n${goal}\n\n#description\n${description}\n\n#acheieved: ${achieved}\n\n#findings\n${findings}\n\n#notes\n${notes}\n\n#timestamp\n${timestamp}\n`;
+  return `#goal\n${goal}\n\n#description\n${description}\n\n#achieved: ${achieved}\n\n#findings\n${findings}\n\n#notes\n${notes}\n\n#timestamp\n${timestamp}\n`;
+}
+
+export function parseHandoffMarkdown(content) {
+  const text = String(content ?? "");
+  const achievedMatch = text.match(/^#achieved:\s*(yes|no|true|false)\s*$/im)
+    || text.match(/^#acheieved:\s*(yes|no|true|false)\s*$/im);
+  const achievedValue = achievedMatch?.[1]?.toLowerCase();
+
+  return {
+    achieved: achievedValue === "yes" || achievedValue === "true",
+    usesLegacyAchievedHeading: /^#acheieved:/im.test(text),
+  };
 }
 
 async function writeExclusive(filePath, content) {
@@ -292,6 +362,7 @@ export async function createGoalSkill(projectRoot, input, options = {}) {
   const handoffDir = safeResolveInside(goalDir, "handoffs");
   const skillPath = safeResolveInside(skillDir, "SKILL.md");
   const goalPath = safeResolveInside(goalDir, "goal.md");
+  const statePath = safeResolveInside(goalDir, "state.json");
   const relativeSkillPath = `.agents/skills/${goalId}/SKILL.md`;
   const relativeHandoffDir = `.opencode/goals/${goalId}/handoffs`;
 
@@ -310,12 +381,14 @@ export async function createGoalSkill(projectRoot, input, options = {}) {
 
   await writeExclusive(skillPath, buildSkillMarkdown(payload));
   await writeExclusive(goalPath, buildGoalRecordMarkdown(payload));
+  await writeJsonFile(statePath, buildGoalState(payload), { flag: "wx" });
 
   return {
     goalId,
     skillName: goalId,
     skillPath,
     goalPath,
+    statePath,
     handoffDir,
   };
 }
@@ -337,8 +410,8 @@ async function nextHandoffPath(handoffDir, timestamp, agent) {
 export async function recordHandoff(projectRoot, input, options = {}) {
   const goalId = normalizeGoalId(input.goalId);
   const timestamp = input.timestamp || timestampParts(options.now || new Date()).iso;
-  const opencodeDir = opencodeDirForProject(projectRoot);
-  const handoffDir = safeResolveInside(opencodeDir, "goals", goalId, "handoffs");
+  await assertGoalRecordExists(projectRoot, goalId);
+  const handoffDir = safeResolveInside(goalDirForProject(projectRoot, goalId), "handoffs");
   await mkdir(handoffDir, { recursive: true });
 
   const handoffPath = await nextHandoffPath(handoffDir, timestamp, input.agent || "subagent");
@@ -347,6 +420,89 @@ export async function recordHandoff(projectRoot, input, options = {}) {
     goalId,
     handoffPath,
   };
+}
+
+export async function listGoals(projectRoot) {
+  const goalsDir = safeResolveInside(opencodeDirForProject(projectRoot), "goals");
+  try {
+    const names = (await readdir(goalsDir)).filter((name) => /^goal-[a-z0-9]+(-[a-z0-9]+)*$/.test(name)).sort();
+    const states = await Promise.all(names.map(async (name) => {
+      try {
+        return await readGoalState(projectRoot, name);
+      } catch {
+        return {
+          goalId: name,
+          status: "unknown",
+        };
+      }
+    }));
+
+    return states.sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+  } catch (error) {
+    if (error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+export async function readGoalState(projectRoot, goalId) {
+  const normalizedGoalId = normalizeGoalId(goalId);
+  const statePath = goalStatePath(projectRoot, normalizedGoalId);
+  const state = await readJsonFile(statePath);
+  return {
+    ...state,
+    goalId: normalizedGoalId,
+    statePath,
+  };
+}
+
+export async function readCurrentGoalState(projectRoot, goalId) {
+  if (goalId) {
+    return readGoalState(projectRoot, goalId);
+  }
+
+  const goals = await listGoals(projectRoot);
+  if (goals.length === 0) {
+    throw new Error("No goal state found in the current project.");
+  }
+
+  return readGoalState(projectRoot, goals[0].goalId);
+}
+
+export async function updateGoalStatus(projectRoot, input, options = {}) {
+  const goalId = normalizeGoalId(input.goalId);
+  const status = String(input.status ?? "").trim();
+  if (!["complete", "blocked"].includes(status)) {
+    throw new Error(`Invalid goal status: ${input.status}. Expected complete or blocked.`);
+  }
+
+  await assertGoalRecordExists(projectRoot, goalId);
+
+  const { statePath: _statePath, ...state } = await readGoalState(projectRoot, goalId);
+  const handoffs = await readGoalHandoffs(projectRoot, goalId);
+  const updatedAt = timestampParts(options.now || new Date()).iso;
+  const attempts = handoffs.filter((handoff) => !/verification-agent/i.test(handoff.name)).length;
+  const verificationPasses = handoffs.filter((handoff) => /verification-agent/i.test(handoff.name)).length;
+
+  const next = {
+    ...state,
+    status,
+    updatedAt,
+    attempts,
+    verificationPasses,
+    summary: String(input.summary ?? "").trim() || "None",
+    evidence: String(input.evidence ?? "").trim() || "None",
+  };
+
+  if (status === "complete") {
+    next.completedAt = updatedAt;
+    delete next.blockedAt;
+  } else {
+    next.blockedAt = updatedAt;
+    delete next.completedAt;
+  }
+
+  await writeJsonFile(goalStatePath(projectRoot, goalId), next);
+  return next;
 }
 
 async function assertDirectory(target) {
