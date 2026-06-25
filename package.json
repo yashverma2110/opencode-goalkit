@@ -1,0 +1,28 @@
+{
+  "name": "opencode-goalkit",
+  "version": "0.1.0",
+  "description": "OpenCode goal planning commands and helper plugin",
+  "type": "module",
+  "main": "./src/plugin.js",
+  "exports": {
+    ".": "./src/plugin.js"
+  },
+  "bin": {
+    "opencode-goalkit": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "src",
+    "templates",
+    "README.md"
+  ],
+  "dependencies": {
+    "@opencode-ai/plugin": "1.14.28"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
