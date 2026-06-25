@@ -70,7 +70,7 @@ async function main() {
     console.log(`Installed global /goal and /grill commands into ${result.configDir}`);
     console.log(`Goal command: ${result.commandPath}`);
     console.log(`Grill command: ${result.grillCommandPath}`);
-    console.log("Plugin runtime is managed by: opencode plugin opencode-goalkit --global");
+    console.log('Plugin runtime is loaded by adding "opencode-goalkit" to the plugin list in opencode.json');
     return;
   }
 

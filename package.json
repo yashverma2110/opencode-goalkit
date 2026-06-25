@@ -3,6 +3,23 @@
   "version": "0.1.0",
   "description": "OpenCode goal planning commands and helper plugin",
   "type": "module",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "goal",
+    "agents",
+    "automation",
+    "coding-agent"
+  ],
+  "author": "Yash Verma",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yashverma2110/opencode-goalkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yashverma2110/opencode-goalkit/issues"
+  },
+  "homepage": "https://github.com/yashverma2110/opencode-goalkit#readme",
   "main": "./src/plugin.js",
   "exports": {
     ".": "./src/plugin.js"
@@ -18,6 +35,12 @@
     "templates",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "opencode": {
+    "type": "plugin"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "1.14.28"
   },

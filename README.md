@@ -1,26 +1,41 @@
 # opencode-goalkit
 
-Local OpenCode package that installs `/goal` and `/grill` commands plus a helper plugin for approval-gated goal execution.
+OpenCode plugin that adds approval-gated goal execution tools plus `/goal` and `/grill` commands.
 
-## Global install
+## Getting Started
 
-For published use:
+Add the plugin to your OpenCode configuration at `~/.config/opencode/opencode.json`:
 
-```sh
-opencode plugin opencode-goalkit --global
-opencode-goalkit install --global
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-goalkit"]
+}
 ```
 
-This writes:
-
-- `<global-opencode-config>/commands/goal.md`
-
-The global command installer does not copy plugin runtime files. OpenCode owns the plugin runtime through `opencode plugin opencode-goalkit --global`.
-
-## Install into a project
+Install the slash commands globally:
 
 ```sh
-opencode-goalkit install --target /path/to/project
+npx opencode-goalkit install --global
+```
+
+Restart OpenCode. You can then run:
+
+```text
+/goal implement the checkout retry workflow
+```
+
+The global command installer writes:
+
+- `<global-opencode-config>/commands/goal.md`
+- `<global-opencode-config>/commands/grill.md`
+
+The global command installer does not copy plugin runtime files. OpenCode loads the plugin runtime from the npm package listed in your `opencode.json`.
+
+## Project-Local Install
+
+```sh
+npx opencode-goalkit install --target /path/to/project
 ```
 
 For local development from this repo:

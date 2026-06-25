@@ -26,7 +26,7 @@ test("cli installs global command using OPENCODE_CONFIG_DIR", async () => {
     assert.match(stdout, /Installed global \/goal and \/grill commands/);
     assert.match(stdout, /Goal command:/);
     assert.match(stdout, /Grill command:/);
-    assert.match(stdout, /opencode plugin opencode-goalkit --global/);
+    assert.match(stdout, /adding "opencode-goalkit" to the plugin list in opencode\.json/);
     assert.match(await readFile(path.join(configDir, "commands", "goal.md"), "utf8"), /Loop not justified/);
     assert.match(await readFile(path.join(configDir, "commands", "grill.md"), "utf8"), /Ask exactly one question at a time/);
   } finally {
